@@ -112,6 +112,7 @@ def print_amazon_transactions(
         exit(1)
 
     table = Table(title="Amazon Transactions")
+    table.add_column("Account", justify="left", style="magenta", no_wrap=True)
     table.add_column("Completed Date", justify="left", style="cyan", no_wrap=True)
     table.add_column("Transaction Total", justify="right", style="green")
     table.add_column("Order Total", justify="right", style="green")
@@ -121,6 +122,7 @@ def print_amazon_transactions(
 
     for transaction in transactions:
         table.add_row(
+            transaction.account_name,
             str(transaction.completed_date),
             f"${transaction.transaction_total:.2f}",
             f"${transaction.order_total:.2f}",
@@ -149,20 +151,6 @@ def ynamazon(
             default_factory=lambda: settings.ynab_budget_id.get_secret_value(),
         ),
     ],
-    amazon_user: Annotated[
-        str,
-        Argument(
-            help="Amazon username",
-            default_factory=lambda: settings.amazon_user,
-        ),
-    ],
-    amazon_password: Annotated[
-        str,
-        Argument(
-            help="Amazon password",
-            default_factory=lambda: settings.amazon_password.get_secret_value(),
-        ),
-    ],
     force_refresh_amazon: Annotated[
         bool,
         Option(
@@ -176,18 +164,23 @@ def ynamazon(
     [bold cyan](Default) Match YNAB transactions to Amazon Transactions and optionally update YNAB Memos.[/]
 
     [yellow i]All required arguments will use defaults in .env file if not provided.[/]
+    [yellow i]Amazon account credentials are loaded from .env file (supports multiple accounts via AMAZON_USER_1, AMAZON_USER_2, etc.)[/]
     """
     # Store the flag in the Typer context for use in commands
     ctx.obj = {"force_refresh_amazon": force_refresh_amazon}
 
+    # Build list of Amazon configs from settings (will auto-detect single or multi-account mode)
+    amazon_accounts = settings.get_amazon_accounts()
+    amazon_configs = [
+        AmazonConfig(username=email, password=password, account_name=name)
+        for name, email, password in amazon_accounts
+    ]
+
     process_transactions(
-        amazon_config=AmazonConfig(
-            username=amazon_user,
-            password=amazon_password,
-            force_refresh_amazon=ctx.obj["force_refresh_amazon"],
-        ),  # type: ignore[arg-type]
+        amazon_configs=amazon_configs,
         ynab_config=Configuration(access_token=ynab_api_key),
         budget_id=ynab_budget_id,
+        force_refresh_amazon=force_refresh_amazon,
     )
 
 

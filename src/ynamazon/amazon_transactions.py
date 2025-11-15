@@ -31,6 +31,7 @@ class AmazonTransactionWithOrderInfo(BaseModel):
     order_number: str
     order_link: AnyUrl
     items: list[AmazonItemType]
+    account_name: str = "Account 1"  # Default for backward compatibility
 
     @field_validator("transaction_total", mode="after")
     @classmethod
@@ -40,7 +41,12 @@ class AmazonTransactionWithOrderInfo(BaseModel):
 
     # TODO: when dropping support for python <3.11, use Self
     @classmethod
-    def from_transaction_and_orders(cls, orders_dict: "dict[str, Order]", transaction: Transaction):
+    def from_transaction_and_orders(
+        cls,
+        orders_dict: "dict[str, Order]",
+        transaction: Transaction,
+        account_name: str = "Account 1",
+    ):
         """Creates an instance from an order and transactions."""
         order = orders_dict.get(transaction.order_number)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
         if order is None:
@@ -52,6 +58,7 @@ class AmazonTransactionWithOrderInfo(BaseModel):
             order_number=order.order_number,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
             order_link=order.order_details_link,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
             items=order.items,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
+            account_name=account_name,
         )
 
 
@@ -61,10 +68,13 @@ class AmazonConfig(BaseModel):
     Attributes:
         username (EmailStr): Amazon account email.
         password (SecretStr): Amazon account password.
+        account_name (str): Identifier for this Amazon account (e.g., "Account 1", "Account 2").
+        debug (bool): Enable debug mode.
     """
 
     username: EmailStr = Field(default_factory=lambda: settings.amazon_user)
     password: SecretStr = Field(default_factory=lambda: settings.amazon_password)
+    account_name: str = "Account 1"  # Default for backward compatibility
     debug: bool = False
 
     def amazon_session(self) -> AmazonSession:
@@ -139,7 +149,9 @@ class AmazonTransactionRetriever:
             try:
                 amazon_transaction_with_order_details.append(
                     AmazonTransactionWithOrderInfo.from_transaction_and_orders(
-                        orders_dict=orders_dict, transaction=transaction
+                        orders_dict=orders_dict,
+                        transaction=transaction,
+                        account_name=amazon_config.account_name,
                     )
                 )
             except ValueError:

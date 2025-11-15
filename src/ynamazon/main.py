@@ -47,13 +47,20 @@ class MultiLineText(BaseModel):
 
 # TODO: reduce complexity of this function
 def process_transactions(  # noqa: C901
-    amazon_config: AmazonConfig | None = None,
+    amazon_configs: list[AmazonConfig] | None = None,
     ynab_config: "Configuration | None" = None,
     budget_id: str | None = None,
     force_refresh_amazon: bool = False,
 ) -> None:
     """Match YNAB transactions to Amazon Transactions and optionally update YNAB Memos."""
-    amazon_config = amazon_config or AmazonConfig()
+    # Build list of Amazon configs - either from parameter or settings
+    if amazon_configs is None:
+        amazon_accounts = settings.get_amazon_accounts()
+        amazon_configs = [
+            AmazonConfig(username=email, password=password, account_name=name)
+            for name, email, password in amazon_accounts
+        ]
+
     ynab_config = ynab_config or ynab_configuration
     budget_id = budget_id or settings.ynab_budget_id.get_secret_value()
 
@@ -67,12 +74,23 @@ def process_transactions(  # noqa: C901
         console.print("[bold red]No matching Transactions found in YNAB. Exiting.[/]")
         return
 
-    console.print("[cyan]Starting search for Amazon transactions...[/]")
-    amazon_trans = AmazonTransactionRetriever(
-        amazon_config=amazon_config, force_refresh_amazon=force_refresh_amazon
-    ).get_amazon_transactions()
+    console.print("[cyan]Starting search for Amazon transactions across all accounts...[/]")
 
-    console.print(f"[green]{len(amazon_trans)} Amazon transactions retrieved successfully.[/]")
+    # Fetch transactions from all Amazon accounts and merge them
+    amazon_trans = []
+    for config in amazon_configs:
+        console.print(f"[cyan]Fetching transactions for {config.account_name}...[/]")
+        account_transactions = AmazonTransactionRetriever(
+            amazon_config=config, force_refresh_amazon=force_refresh_amazon
+        ).get_amazon_transactions()
+        amazon_trans.extend(account_transactions)
+        console.print(
+            f"[green]{len(account_transactions)} transactions retrieved for {config.account_name}.[/]"
+        )
+
+    console.print(
+        f"[green]Total: {len(amazon_trans)} Amazon transactions retrieved successfully across {len(amazon_configs)} account(s).[/]"
+    )
 
     console.print("[cyan]Starting to look for matching transactions...[/]")
     for ynab_tran in ynab_trans:
@@ -90,10 +108,15 @@ def process_transactions(  # noqa: C901
 
         amazon_tran = amazon_trans[amazon_tran_index]
         console.print(
-            f"[green]Matching Amazon Transaction:[/] {amazon_tran.completed_date} ${amazon_tran.transaction_total:.2f}"
+            f"[green]Matching Amazon Transaction ({amazon_tran.account_name}):[/] {amazon_tran.completed_date} ${amazon_tran.transaction_total:.2f}"
         )
 
         memo = MultiLineText()
+
+        # Add account identifier if multiple accounts are configured
+        if len(amazon_configs) > 1:
+            memo.append(f"[{amazon_tran.account_name}]")
+
         if amazon_tran.transaction_total != amazon_tran.order_total:
             memo.append(
                 f"-This transaction doesn't represent the entire order. The order total is ${amazon_tran.order_total:.2f}-"

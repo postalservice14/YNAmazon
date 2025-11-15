@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv sync:*)",
+      "Bash(pytest:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(ruff check:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(./scripts/build_cli_docs.sh:*)",
+      "Bash(uv run yna --help:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
